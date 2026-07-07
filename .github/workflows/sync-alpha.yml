@@ -30,6 +30,9 @@ jobs:
       - name: Rebase overlay onto upstream Alpha and promote
         env:
           GH_TOKEN: ${{ secrets.SYNC_PAT }}
+          # Pin gh to the fork; the checkout adds an `upstream` remote, which gh
+          # would otherwise pick as the default repo (PR 403 on upstream).
+          GH_REPO: ${{ github.repository }}
           UPSTREAM: https://github.com/MetaCubeX/mihomo.git
         run: |
           set -euo pipefail
