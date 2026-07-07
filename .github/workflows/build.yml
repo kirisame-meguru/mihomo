@@ -16,8 +16,11 @@ on:
       - ".github/ISSUE_TEMPLATE/**"
     branches:
       - Alpha
-    tags:
-      - "v*"
+    # NOTE (fork): tag-push trigger removed. sync-release pushes v* tags with a PAT,
+    # which (unlike upstream's GITHUB_TOKEN) re-triggers this workflow — but on a tag
+    # both upload jobs skip (Upload-Prerelease is branch-only, Upload-Release is
+    # dispatch-only), so it burned the full matrix and published nothing. Stable
+    # releases are built via explicit `gh workflow run build.yml -f version=<T>`.
   pull_request:
     branches:
       - Alpha
