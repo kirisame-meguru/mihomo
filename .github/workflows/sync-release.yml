@@ -73,13 +73,15 @@ jobs:
           while read -r T; do
             [ -n "$T" ] || continue
             echo "::group::Release $T"
-            git fetch --no-tags upstream "+refs/tags/${T}:refs/tags/${T}"
+            # Fetch upstream tag into a private namespace (NOT refs/tags/) so the
+            # name is free for our own `git tag "$T" rel` below.
+            git fetch --no-tags upstream "+refs/tags/${T}:refs/rel-src/${T}"
             git checkout -B rel origin/feat/xmihomo
 
-            if ! git rebase --onto "$T" "$base" rel; then
+            if ! git rebase --onto "refs/rel-src/${T}" "$base" rel; then
               git rebase --abort || true
               snap="sync/release-${T}"
-              git push origin "refs/tags/${T}:refs/heads/${snap}" --force
+              git push origin "refs/rel-src/${T}:refs/heads/${snap}" --force
               if [ -z "$(gh pr list --head "$snap" --state open --json number -q '.[0].number')" ]; then
                 gh pr create --base feat/xmihomo --head "$snap" \
                   --title "⚠️ Release sync: overlay rebase conflict onto ${T}" \
