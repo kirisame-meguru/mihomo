@@ -33,6 +33,9 @@ jobs:
       - name: Build missing upstream tags onto the overlay
         env:
           GH_TOKEN: ${{ secrets.SYNC_PAT }}
+          # Pin gh to the fork; the checkout adds an `upstream` remote, which gh
+          # would otherwise pick as the default repo (dispatch/PR 403 on upstream).
+          GH_REPO: ${{ github.repository }}
           UPSTREAM: https://github.com/MetaCubeX/mihomo.git
           # Oldest release we care about. Prevents backfilling ~100 historical tags
           # (which predate the overlay and would only conflict). Bump as desired.
