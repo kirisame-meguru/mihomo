@@ -88,8 +88,16 @@ func (c *Config) NormalizedPath() string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	if !strings.HasSuffix(path, "/") {
-		path += "/"
+	// Only force a trailing slash when the session id or seq is carried in the
+	// path, so those segments can be appended (client) and sliced off (server).
+	// Otherwise keep the path verbatim so it can point at a real static file:
+	// some CDNs (e.g. *.trbcdn.net) return 403 for a trailing slash on a cached
+	// file path as an anti-XHTTP heuristic.
+	if c.GetNormalizedSessionPlacement() == PlacementPath ||
+		c.GetNormalizedSeqPlacement() == PlacementPath {
+		if !strings.HasSuffix(path, "/") {
+			path += "/"
+		}
 	}
 	return path
 }
