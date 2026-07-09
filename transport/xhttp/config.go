@@ -96,15 +96,10 @@ func (c *Config) NormalizedPath() string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	// Only force a trailing slash when the session id or seq is carried in the
-	// path, so those segments can be appended (client) and sliced off (server).
-	// Otherwise keep the path verbatim so it can point at a real static file:
-	// some CDNs (e.g. *.trbcdn.net) return 403 for a trailing slash on a cached
-	// file path as an anti-XHTTP heuristic.
 	if c.GetNormalizedSessionPlacement() == PlacementPath ||
 		c.GetNormalizedSeqPlacement() == PlacementPath {
-		if !strings.HasSuffix(path, "/") {
-			path += "/"
+		if path[len(path)-1] != '/' {
+			path = path + "/"
 		}
 	}
 	return path
@@ -638,7 +633,7 @@ func (c *Config) GetGenerateSessionID() (func() string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid session-length: %w", err)
 		}
-		room := roomSize(len(c.SessionTable), sessionLength.Min, sessionLength.Max)
+		room := roomSize(len(sessionTable), sessionLength.Min, sessionLength.Max)
 		// 2.1B possiblities should be enough
 		if room.Cmp(big.NewInt(2<<30)) < 0 {
 			return nil, errors.New("session-table or session-length is too small")
