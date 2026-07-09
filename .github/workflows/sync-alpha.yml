@@ -1,8 +1,18 @@
 name: Sync Alpha (prerelease)
 
-# Part B: every 2h, mirror upstream Alpha, rebase the fork overlay onto it,
+# Part B: every 2h, mirror upstream Alpha, MERGE it into the fork overlay,
 # push feat/xmihomo + Alpha + Meta, and let build.yml produce Prerelease-Alpha.
-# On rebase conflict, open a PR asking a human to resolve and stop.
+# On merge conflict, open a PR asking a human to resolve and stop.
+#
+# Why merge and not rebase: the overlay carries fork patches on top of upstream
+# Alpha. A rebase replays each overlay commit's diff individually, so when
+# upstream later lands its own near-identical version of one of those patches
+# (same intent, different bytes), the replay conflicts on every single run and
+# no amount of resolving makes it stick. A merge instead reconciles the final
+# trees once and records the resolution in the merge commit's parentage, so a
+# conflict is resolved a single time and never resurfaces. Whoever authors on
+# feat/xmihomo may resolve conflicts however they like (ours / theirs / a blend)
+# without having to keep the overlay a clean linear stack.
 
 on:
   schedule:
@@ -27,7 +37,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.SYNC_PAT }}
 
-      - name: Rebase overlay onto upstream Alpha and promote
+      - name: Merge upstream Alpha into overlay and promote
         env:
           GH_TOKEN: ${{ secrets.SYNC_PAT }}
           # Pin gh to the fork; the checkout adds an `upstream` remote, which gh
@@ -45,42 +55,53 @@ jobs:
             "+refs/heads/Alpha:refs/remotes/origin/Alpha"
           git fetch --no-tags upstream "+refs/heads/Alpha:refs/remotes/upstream/Alpha"
 
-          base=$(git merge-base origin/feat/xmihomo upstream/Alpha)
           git checkout -B work origin/feat/xmihomo
 
-          if ! git rebase --onto upstream/Alpha "$base" work; then
-            git rebase --abort || true
+          # Reconcile the final tree with upstream, recording the resolution once.
+          if git merge-base --is-ancestor upstream/Alpha work; then
+            # A human (or a previous run) already merged this exact upstream tip;
+            # its resolution is baked into feat/xmihomo's history. Nothing to merge.
+            echo "feat/xmihomo already contains upstream/Alpha ($(git rev-parse --short upstream/Alpha)); no merge needed."
+          elif git merge --no-edit --no-ff upstream/Alpha \
+                 -m "Merge upstream/Alpha $(git rev-parse --short upstream/Alpha) into overlay"; then
+            echo "Merged upstream/Alpha into the overlay."
+          else
+            git merge --abort || true
             snap="sync/alpha-$(git rev-parse --short upstream/Alpha)"
             git push origin "upstream/Alpha:refs/heads/${snap}" --force
-            if [ -n "$(gh pr list --head "$snap" --state open --json number -q '.[0].number')" ]; then
+            if [ -n "$(gh pr list --head "$snap" --base feat/xmihomo --state open --json number -q '.[0].number')" ]; then
               echo "Conflict PR for ${snap} already open; nothing more to do."
               exit 0
             fi
             gh pr create --base feat/xmihomo --head "$snap" \
-              --title "⚠️ Alpha sync: overlay rebase conflict onto upstream/Alpha" \
+              --title "⚠️ Alpha sync: merge conflict with upstream/Alpha" \
               --body "$(printf '%s\n' \
-                'Automated overlay rebase onto \`upstream/Alpha\` hit a conflict; Alpha sync is halted until resolved.' \
+                'Merging \`upstream/Alpha\` into the fork overlay hit a conflict; Alpha sync is halted until resolved.' \
                 '' \
-                'Resolve locally, then force-push \`feat/xmihomo\`:' \
+                'Just merge this PR and resolve the conflicts (pick ours, theirs, or a blend per file).' \
+                'Because it is a merge, the resolution is recorded in history and will NOT resurface on' \
+                'future syncs — even for files where upstream keeps its own version of a fork patch.' \
+                '' \
+                'Prefer the CLI?' \
                 '```' \
-                'git fetch --all --tags' \
+                'git fetch --all' \
                 'git checkout -B fix origin/feat/xmihomo' \
-                'git rebase --onto upstream/Alpha $(git merge-base origin/feat/xmihomo upstream/Alpha) fix' \
-                '# resolve conflicts, git rebase --continue' \
-                'git push origin fix:feat/xmihomo --force' \
+                'git merge upstream/Alpha   # resolve conflicts, then: git commit' \
+                'git push origin fix:feat/xmihomo' \
                 '```' \
                 'Then close this PR and delete the snapshot branch.')"
-            echo "::error::Alpha overlay rebase conflict — see PR."
+            echo "::error::Alpha overlay merge conflict — see PR."
             exit 1
           fi
 
           if [ "$(git rev-parse work)" = "$(git rev-parse origin/Alpha)" ]; then
-            echo "Alpha already up to date with rebased overlay; nothing to do."
+            echo "Alpha already up to date with the overlay; nothing to do."
             exit 0
           fi
 
           # feat/xmihomo (authoring) + Alpha (build source) + Meta (rolling) all track the overlay.
-          git push origin work:refs/heads/feat/xmihomo --force
+          # feat/xmihomo advances by fast-forward (work is built on top of it), so no --force there.
+          git push origin work:refs/heads/feat/xmihomo
           git push origin work:refs/heads/Meta --force
           # Push Alpha last: this is the trigger for build.yml -> Prerelease-Alpha.
           git push origin work:refs/heads/Alpha --force
