@@ -5,6 +5,10 @@ on:
       version:
         description: "Tag version to release"
         required: true
+      skip_promote:
+        description: "Fork: skip Alpha->Meta force-push and Alpha tagging (release already tagged by sync-release)"
+        required: false
+        default: "false"
   push:
     paths-ignore:
       - "docs/**"
@@ -12,8 +16,11 @@ on:
       - ".github/ISSUE_TEMPLATE/**"
     branches:
       - Alpha
-    tags:
-      - "v*"
+    # NOTE (fork): tag-push trigger removed. sync-release pushes v* tags with a PAT,
+    # which (unlike upstream's GITHUB_TOKEN) re-triggers this workflow — but on a tag
+    # both upload jobs skip (Upload-Prerelease is branch-only, Upload-Release is
+    # dispatch-only), so it burned the full matrix and published nothing. Stable
+    # releases are built via explicit `gh workflow run build.yml -f version=<T>`.
   pull_request:
     branches:
       - Alpha
@@ -394,7 +401,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: Meta
+          ref: ${{ github.event.inputs.version }}
           fetch-depth: '0'
           fetch-tags: 'true'
 
@@ -405,6 +412,7 @@ jobs:
           echo "PREVERSION=$(git describe --tags --abbrev=0 HEAD)" >> $GITHUB_ENV
 
       - name: Force push Alpha branch to Meta
+        if: ${{ github.event.inputs.skip_promote != 'true' }}
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
@@ -414,6 +422,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tag the commit on Alpha
+        if: ${{ github.event.inputs.skip_promote != 'true' }}
         run: |
           git checkout Alpha 
           git tag ${{ github.event.inputs.version }}
